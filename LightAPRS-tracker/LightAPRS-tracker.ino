@@ -31,7 +31,7 @@
 #define DEVMODE // Development mode. Uncomment to enable for debugging.
 
 //******************************  APRS CONFIG **********************************
-char    CallSign[7]="WE7SKI"; //DO NOT FORGET TO CHANGE YOUR CALLSIGN
+char    CallSign[7]="XXXXXX"; //DO NOT FORGET TO CHANGE YOUR CALLSIGN
 int8_t  CallNumber=9;//SSID http://www.aprs.org/aprs11/SSIDs.txt
 char    Symbol='>'; // 'O' for balloon, '>' for car, for more info : http://www.aprs.org/symbols/symbols-new.txt
 bool    alternateSymbolTable = false ; //false = '/' , true = '\'
@@ -649,7 +649,3 @@ void printAddress(DeviceAddress deviceAddress)
     SerialUSB.print(deviceAddress[i], HEX);
   }
 }
-
-//STATUS:  Remove possible buffer overflow conditions, general cleanup
-// Need to submit pull request into APRS library
-// Need to move modified files back to NAS for backup
