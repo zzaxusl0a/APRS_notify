@@ -23,8 +23,10 @@ In order to use a switch to disable the GPS coordinates and an external temperat
 
 # STL Files
 Case designed for this project
-Recommended to be printed using PETG, 20% infill, with supports: 
+Recommended to be printed using PETG, 20% infill, with supports:
+
 [Case - PCB Mount Antenna](https://github.com/zzaxusl0a/APRS_notify/blob/main/STL%20files/APRS%20Case%20-%20PCB%20mount%20antenna%20-%20final%20version.stl)
+
 [Control Panel](https://github.com/zzaxusl0a/APRS_notify/blob/main/STL%20files/APRS%20Control%20Panel%202-up.stl)
 
 ## Bill of Materials
