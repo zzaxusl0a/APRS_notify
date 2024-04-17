@@ -18,6 +18,7 @@ See the example included in the library for info on how to use it!
 ## Installation
 
 1. Download the library: https://github.com/hakkican/ZeroAPRS/archive/master.zip
+1. NOTE: This library has been modified from the 1.0 version! You must use 1.0.2 or greater 
 1. (In the Arduino IDE) Sketch > Include Library > Add .ZIP Library... > select the downloaded file > Open
 
 ## Getting started
