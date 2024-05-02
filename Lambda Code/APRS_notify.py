@@ -30,7 +30,7 @@ MESSAGING_SERVICE_SID = os.environ['TWILIO_MSG_SERVICE_SID']
 #the Lambda Handler is called by AWS. Acts as core of the application
 def lambda_handler(event, context):
     
-    #SET EVENT FLAGS HERE
+    #pick up event flags
     APRS_name = "XXXXXX"
     SMS_to = "+18005551212"
     
@@ -121,30 +121,28 @@ def lambda_handler(event, context):
         internal_temp = float(comment[2:7])
         bmp_temp = float(comment[11:16])
         
-        #print("Internal temp: %.2f , BMP temp: %.2f") %(internal_temp,bmp_temp)
-        
         #temperature will report 200 on known sensor error
         if internal_temp > 199:
            message_string = "Temperature Sensor Malfunction error 200"
-           send_alert(message_string, alert_sent,SMS_to)
+           send_alert(message_string, alert_sent,SMS_to,APRS_name)
            alert_sent = 'True'
         
         #if temperature is over, go to alert
         elif internal_temp >= Maximum_Temperature:
             message_string = "Temperature exceeds Maximum! Internal Temp: %.2f" %internal_temp
-            send_alert(message_string, alert_sent,SMS_to)
+            send_alert(message_string, alert_sent,SMS_to,APRS_name)
             alert_sent = 'True'
         
         #elseif temperature is below freezing, go to alert
         elif internal_temp <= Minimum_Temperature:
             message_string = "Temperature below Minimum! Internal Temp: %.2f" %internal_temp
-            send_alert(message_string, alert_sent,SMS_to)
+            send_alert(message_string, alert_sent,SMS_to,APRS_name)
             alert_sent = 'True'
         
         #elseif internal and BMP temp are different by greater than 20F, go to alert
         elif not ((bmp_temp - 20) < internal_temp < (bmp_temp + 20)):
             message_string = "Temperature Sensor Mismatch! Internal Temp: %.2f, BMP Temp: %.2f" %(internal_temp, bmp_temp)
-            send_alert(message_string, alert_sent,SMS_to)
+            send_alert(message_string, alert_sent,SMS_to,APRS_name)
             alert_sent = 'True'
                 
         else:
@@ -156,14 +154,14 @@ def lambda_handler(event, context):
             test_time_int = int(time.time())
             test_time_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ%z', time.localtime(test_time_int))
         
-            #test if report is greater than allowed minutes old
+            #test if report is greater than 5 minutes old
             if test_time_int > (lasttime_int + (Maximum_Beacon_Age * 60)):
                 message_string = "APRS report is greater than " + str(Maximum_Beacon_Age) +" minutes old. Last Reported time: " + lasttime_iso
-                send_alert(message_string, alert_sent,SMS_to)
+                send_alert(message_string, alert_sent,SMS_to,APRS_name)
                 alert_sent = 'True'
             elif not ((previous_recorded_temp - Maximum_Temp_Delta) < internal_temp < (previous_recorded_temp + Maximum_Temp_Delta)):
                 message_string = "Temperature Delta Too High! Internal Temp: %.2f, Previous Temp: %.2f " %(internal_temp,previous_recorded_temp)
-                send_alert(message_string, alert_sent,SMS_to)
+                send_alert(message_string, alert_sent,SMS_to,APRS_name)
                 alert_sent = 'True'
             else:
                 #temperature and time passed checks
@@ -224,19 +222,18 @@ def lambda_handler(event, context):
 #send alert publishes a SMS message. Currently through Twilio
 #records message SID into database
 #note! if alert_flag is FALSE, this will SEND a message!
-def send_alert(error_message,alert_flag,sms_to_number):
+def send_alert(error_message,alert_flag,sms_to_number,database_target):
     
     logger.info("SA:Error flag is: " +alert_flag +", Error message is: " +error_message)
     
     #if the alert flag is false, we want to send a message
     if alert_flag == "False":
-            
-        try:
+      try:
              #create a database connection
             simpleDBclient = boto3.client('sdb')
             getDB_response = simpleDBclient.get_attributes(
                 DomainName='APRS_tracker',
-                ItemName= APRS_name
+                ItemName= database_target
             )
             # insert Twilio Account SID into the REST API URL
             client = Client(TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN)
@@ -250,7 +247,7 @@ def send_alert(error_message,alert_flag,sms_to_number):
             #record message SID in database for delivery test
             DBresponse = simpleDBclient.put_attributes(
                 DomainName='APRS_tracker',
-                ItemName=APRS_name,
+                ItemName=database_target,
                 Attributes=[
                     {
                         'Name': 'SMS_sid',
