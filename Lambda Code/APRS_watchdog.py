@@ -62,7 +62,7 @@ def lambda_handler(event, context):
         message = client.messages.create(
             messaging_service_sid=MESSAGING_SERVICE_SID,
             to=SMS_to,
-            body= error_message
+            body= outbound_message
         )
         logger.info((f"SMS Sent: {message.sid}"))
         lambda_return['Message'] = outbound_message
