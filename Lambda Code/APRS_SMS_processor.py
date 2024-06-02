@@ -205,7 +205,7 @@ def monitor_status(callsign)
 #manages the monitoring cron job. Requires a callsign, sms number, and boolean active flag
 #returns a human-readable status string
 #TODO: add some kind of abuse rate-limiting here
-def configure_cron_job(callsign, inbound_sms_number, montior_active)
+def configure_cron_job(callsign, inbound_sms_number, monitor_active)
   try:
     #set up the EventBridge scheduler object
     EB_client = boto3.client('scheduler')
