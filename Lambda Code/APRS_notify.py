@@ -1,5 +1,4 @@
 import os
-import base64
 import boto3
 import json
 import time
@@ -25,14 +24,24 @@ TWILIO_ACCOUNT_SID = os.environ['TWILIO_ACCOUNT_SID']
 TWILIO_AUTH_TOKEN = os.environ['TWILIO_AUTH_TOKEN']
 MESSAGING_SERVICE_SID = os.environ['TWILIO_MSG_SERVICE_SID']
 
-
-
 #the Lambda Handler is called by AWS. Acts as core of the application
 def lambda_handler(event, context):
     
     #pick up event flags
-    APRS_name = "XXXXXX"
-    SMS_to = "+18005551212"
+    logger.info("received: " + str(event))
+  
+    #First, extract event flags to identify what needs to be monitored
+    try:
+        APRS_name = event["APRS_name"]
+        SMS_to = event["SMS_to"]
+        logger.info("inbound event request for: " +APRS_name +", " +SMS_to)
+    except Exception as err:
+        lambda_return =  {'Status': '400', 'Message': 'Invalid event arguments', 'Code':'STA'}
+        return {
+            'statusCode': lambda_return['Status'],
+            'body': json.dumps(lambda_return)
+        }
+    #endtry
     
     #set up response item
     lambda_return = {'Status': '200', 'Message': '', 'Code':''}
@@ -52,7 +61,6 @@ def lambda_handler(event, context):
         
         logger.exception(lambda_return['Message'])
         return {
-        
             'statusCode': lambda_return['Status'],
             'body': json.dumps(lambda_return)
         }
@@ -61,14 +69,43 @@ def lambda_handler(event, context):
     #endtry
     
     #continuing. We should have a good response from APRS.FI at this point
+    
+    try:
     # Check if the result field is "fail"
-    result = json_payload['result']
-    if result == 'fail':
-        comment = "Request Failed " +json_payload['description']
-        #send_alert(comment, "False")
-    elif not(200 <= response.status <= 299):
+        result = json_payload['result']
+        if result == 'fail':
+            comment = "Request Failed " +json_payload['description']
+            lambda_return['Status'] = "500"
+            lambda_return['Message'] = "APRS:Response payload was failure"
+            lambda_return['Code'] = "APRS"
+        
+            logger.exception(lambda_return['Message'])
+            return {
+                'statusCode': lambda_return['Status'],
+                'body': json.dumps(lambda_return)
+            }
+        elif not(200 <= response.status <= 299):
+            lambda_return['Status'] = "500"
+            lambda_return['Message'] = "APRS:Response not 200: " +str(response.status)
+            lambda_return['Code'] = "APRS"
+        
+            logger.exception(lambda_return['Message'])
+            return {
+                'statusCode': lambda_return['Status'],
+                'body': json.dumps(lambda_return)
+            }
+        else:
+            # Extract the comment from the JSON  WARNING. NOT SANITIZED - exception to handle
+            comment = json_payload['entries'][0]['comment']
+            # Extract the last published time from the JSON
+            lasttime_int = int(json_payload['entries'][0]['lasttime'])
+            #convert APRS last reported time to ISO object
+            #need this for database logging and comparison
+            lasttime_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ%z', time.localtime(lasttime_int))
+        #endif
+    except Exception as err:
         lambda_return['Status'] = "500"
-        lambda_return['Message'] = "APRS:Response not 200: " +str(response.status)
+        lambda_return['Message'] = "APRS:Exception in APRS Query: " +(f"{type(err).__name__} was raised: {err}")
         lambda_return['Code'] = "APRS"
         
         logger.exception(lambda_return['Message'])
@@ -76,15 +113,7 @@ def lambda_handler(event, context):
             'statusCode': lambda_return['Status'],
             'body': json.dumps(lambda_return)
         }
-    else:
-        # Extract the comment from the JSON  WARNING. NOT SANITIZED!
-        comment = json_payload['entries'][0]['comment']
-        # Extract the last published time from the JSON
-        lasttime_int = int(json_payload['entries'][0]['lasttime'])
-        #print("JSON payload\n")
-        #print(json.dumps(json_payload))
-    #endif
-    
+    #endtry
     #we now have the required data from the APRS packet.
     
     try:
@@ -101,18 +130,14 @@ def lambda_handler(event, context):
             for attribute in getDB_response["Attributes"]:
                 if attribute["Name"] == "alert_sent":
                     alert_sent = attribute["Value"]
-                #endif
-            #endfor
-            #also pick up the comment for the previous temperature value
-            for attribute in getDB_response["Attributes"]:
-                if attribute["Name"] == "comment":
+                elif attribute["Name"] == "comment":
                     previous_comment = attribute["Value"]
                     previous_recorded_temp = float(previous_comment[2:7])
                 #endif
             #endfor
-            print("SDB:Existing entry found in DB for " +APRS_name +". Alert value is " +alert_sent)
+            logger.info("SDB:Existing entry found in DB for " +APRS_name +". Alert value is " +alert_sent)
         else:
-            print("SDB:New entry in DB for " + APRS_name)
+            logger.info("SDB:New entry in DB for " + APRS_name)
             #we don't have a record, set alert flag to false
             alert_sent = 'False'
         #endif
@@ -120,12 +145,13 @@ def lambda_handler(event, context):
         #Parse the comment and test the temperature
         internal_temp = float(comment[2:7])
         bmp_temp = float(comment[11:16])
+        logger.info(f"Internal temp: {internal_temp:,.2f} , BMP temp: {bmp_temp:,.2f}")
         
         #temperature will report 200 on known sensor error
         if internal_temp > 199:
-           message_string = "Temperature Sensor Malfunction error 200"
-           send_alert(message_string, alert_sent,SMS_to,APRS_name)
-           alert_sent = 'True'
+            message_string = "Temperature Sensor Malfunction: error 200"
+            send_alert(message_string, alert_sent,SMS_to,APRS_name)
+            alert_sent = 'True'
         
         #if temperature is over, go to alert
         elif internal_temp >= Maximum_Temperature:
@@ -133,7 +159,7 @@ def lambda_handler(event, context):
             send_alert(message_string, alert_sent,SMS_to,APRS_name)
             alert_sent = 'True'
         
-        #elseif temperature is below freezing, go to alert
+        #elseif temperature is below minimum, go to alert
         elif internal_temp <= Minimum_Temperature:
             message_string = "Temperature below Minimum! Internal Temp: %.2f" %internal_temp
             send_alert(message_string, alert_sent,SMS_to,APRS_name)
@@ -141,26 +167,30 @@ def lambda_handler(event, context):
         
         #elseif internal and BMP temp are different by greater than 20F, go to alert
         elif not ((bmp_temp - 20) < internal_temp < (bmp_temp + 20)):
-            message_string = "Temperature Sensor Mismatch! Internal Temp: %.2f, BMP Temp: %.2f" %(internal_temp, bmp_temp)
+            message_string = f"Temperature Sensor Mismatch! Internal Temp: {internal_temp:,.2f}, BMP Temp: {bmp_temp:,.2f}" 
             send_alert(message_string, alert_sent,SMS_to,APRS_name)
             alert_sent = 'True'
                 
         else:
-            #if temperature has passed these checks, check the time
-            #convert APRS last reported time to ISO object
-            #need this for database logging and comparison
-            lasttime_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ%z', time.localtime(lasttime_int))
+            #if temperature has passed these core checks, move to secondary checks
+          
+            #prepare to check time delta from reports
             #get current time from clock
             test_time_int = int(time.time())
             test_time_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ%z', time.localtime(test_time_int))
+            
+            lasttime_int = test_time_int
+            logger.info("Last report time: " +lasttime_iso + " Test time: " +test_time_iso)
         
             #test if report is greater than 5 minutes old
             if test_time_int > (lasttime_int + (Maximum_Beacon_Age * 60)):
                 message_string = "APRS report is greater than " + str(Maximum_Beacon_Age) +" minutes old. Last Reported time: " + lasttime_iso
                 send_alert(message_string, alert_sent,SMS_to,APRS_name)
                 alert_sent = 'True'
+            
+            #test the temperature delta
             elif not ((previous_recorded_temp - Maximum_Temp_Delta) < internal_temp < (previous_recorded_temp + Maximum_Temp_Delta)):
-                message_string = "Temperature Delta Too High! Internal Temp: %.2f, Previous Temp: %.2f " %(internal_temp,previous_recorded_temp)
+                message_string = f"Temperature Delta Too High! Internal Temp: {internal_temp:,.2f}, Previous Temp: {previous_recorded_temp:,.2f}"
                 send_alert(message_string, alert_sent,SMS_to,APRS_name)
                 alert_sent = 'True'
             else:
@@ -170,7 +200,6 @@ def lambda_handler(event, context):
             #endif   
         #endtemp if here
         lambda_return['Message'] = message_string
-        
         
         #Complete by publishing the current state in the database
         DBresponse = simpleDBclient.put_attributes(
@@ -228,14 +257,13 @@ def send_alert(error_message,alert_flag,sms_to_number,database_target):
     
     #if the alert flag is false, we want to send a message
     if alert_flag == "False":
-      try:
-             #create a database connection
+        try:
+            #create a database connection
             simpleDBclient = boto3.client('sdb')
             getDB_response = simpleDBclient.get_attributes(
                 DomainName='APRS_tracker',
                 ItemName= database_target
             )
-            # insert Twilio Account SID into the REST API URL
             client = Client(TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN)
             message = client.messages.create(
                     messaging_service_sid= MESSAGE_SERVICE_SID,
@@ -244,7 +272,7 @@ def send_alert(error_message,alert_flag,sms_to_number,database_target):
                     )
             logger.info("SMS Sent")
             logger.info(message.sid)
-            #record message SID in database for delivery test
+            #record message SID in database for future delivery test
             DBresponse = simpleDBclient.put_attributes(
                 DomainName='APRS_tracker',
                 ItemName=database_target,
@@ -270,6 +298,9 @@ def send_alert(error_message,alert_flag,sms_to_number,database_target):
 #end send_alert
 
 # This calls the handler. Use only when testing.
-#print(lambda_handler("a","b"))
+#test_event = {}
+#test_event["APRS_name"] = "AB1CDE"
+#test_event["SMS_to"] = "+18888888888"
+#print(lambda_handler(test_event,"b"))
 
 #eof
