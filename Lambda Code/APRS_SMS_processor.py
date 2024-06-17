@@ -248,13 +248,13 @@ def configure_cron_job(callsign, inbound_sms_number, monitor_active):
                     Name=callsign,
                     ScheduleExpression="rate(5 minutes)",
                     Target={
-                        "Arn": "arn:aws:lambda:us-west-2:764880901691:function:TemperatureAlert",
+                        "Arn": "<arn>",
                         "Input": lambda_event_input_string,
                         "RetryPolicy": {
                             "MaximumEventAgeInSeconds": 86400,
                             "MaximumRetryAttempts": 0
                         },
-                        "RoleArn": "arn:aws:iam::764880901691:role/service-role/Amazon_EventBridge_Scheduler_LAMBDA_9f7d527372"
+                        "RoleArn": "<role_arn>"
                     }
                 )
                 return_value = "APRS Monitor: Session started for site "+callsign +". Monitoring automatically stops in " +str(default_schedule_expiration_hours) +" hours. Text STOP to end. Text STATUS for status. Message & Data rates may apply."
@@ -286,13 +286,13 @@ def configure_cron_job(callsign, inbound_sms_number, monitor_active):
                         Name=callsign,
                         ScheduleExpression="rate(5 minutes)",
                         Target={
-                            "Arn": "arn:aws:lambda:us-west-2:764880901691:function:TemperatureAlert",
+                            "Arn": "<arn>",
                             "Input": lambda_event_input_string,
                             "RetryPolicy": {
                                 "MaximumEventAgeInSeconds": 86400,
                                 "MaximumRetryAttempts": 0
                             },
-                            "RoleArn": "arn:aws:iam::764880901691:role/service-role/Amazon_EventBridge_Scheduler_LAMBDA_9f7d527372"
+                            "RoleArn": "<role_arn>"
                         }
                     )
                     return_value = "Monitoring active for: " +callsign +". Monitoring automatically stops in " +str(default_schedule_expiration_hours) +" hours. Data and Msg charges may apply. STOP to end."
