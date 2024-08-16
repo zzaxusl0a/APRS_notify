@@ -40,6 +40,12 @@ char Frequency[9]="144.3900"; //default frequency. 144.3900 for US, 144.8000 for
 
 char    comment[40] = "LightAPRS 2.0"; // Max 40 char but shorter is better.
 char    StatusMessage[50] = "LightAPRS 2.0 w. firmware by WE7SKI";
+
+//location to set spoofed GPS coordinates to when GPS switch is off.
+//APRS.fi will not plot / accept beacons with no location data
+//format is decimal degrees
+float f_spoof_lat = 40.378155;
+float f_spoof_long = -105.517733;
 //*****************************************************************************
 
 uint16_t  BeaconWait=50;  //seconds sleep for next beacon (HF or VHF). This is optimized value, do not change this if possible.
@@ -81,6 +87,7 @@ DallasTemperature sensors(&oneWire);
 DeviceAddress insideThermometer;
 
 int GPSEnableState = 0;  //if false, do not use GPS for time / location
+boolean DS18B20active = false;  //set up value to allow for temperature sensor retry
 
 void setup() {
   // While the energy rises slowly with the solar panel, 
@@ -107,7 +114,7 @@ void setup() {
   while (millis() - start < 5000 && !SerialUSB){;}
   //Watchdog.reset(); 
 
-  SerialUSB.println(F("Starting build 2024.04.15.r1"));
+  SerialUSB.println(F("Starting build 2024.08.15.r1"));
   Serial1.begin(9600);// for DorjiDRA818V
 
   APRS_init();
@@ -127,20 +134,8 @@ void setup() {
   bmp.begin();  //bmp sensor gets temp and pressure from the box itself
 
   //start the temperature sensor
-  SerialUSB.println("Locating devices...");
-  sensors.begin();
-  SerialUSB.print("Found ");
-  SerialUSB.print(sensors.getDeviceCount(), DEC);
-  SerialUSB.println(" devices.");
-  if (!sensors.getAddress(insideThermometer, 0)) SerialUSB.println("Unable to find address for Device 0"); 
-  // show the addresses we found on the bus
-  SerialUSB.print("Device 0 Address: ");
-  printAddress(insideThermometer);
-  SerialUSB.println();
+  startDS18B20();
 
-  //set the resolution to 9 bit (Each Dallas/Maxim device is capable of several different resolutions)
-  sensors.setResolution(insideThermometer, 9);
- 
   // print systems are ready
   SerialUSB.println(F(""));
   SerialUSB.print(F("APRS (VHF) CallSign: "));
@@ -300,14 +295,15 @@ void updatePosition() {
   char latStr[10];
   int temp = 0;
   double d_lat;
-  
+  double dm_lat = 0.0;
+ 
   if(GPSEnableState != 0) {
     d_lat = myGPS.getLatitude() / 10000000.f;
   }
   else {
     d_lat = 0;
   }
-  double dm_lat = 0.0;
+  
 
   if (d_lat < 0.0) {
     temp = -(int)d_lat;
@@ -384,7 +380,7 @@ void updatePosition() {
     APRS_setTimeStamp(myGPS.getHour(), myGPS.getMinute(), myGPS.getSecond());
   }
   else {
-    //can try commenting this out to see if timestamp goes to null
+    //setting timestamp to 99,99,99 triggers use of the alternate (no time) signal table
     APRS_setTimeStamp(99,99,99);
   }
 }
@@ -623,6 +619,12 @@ float readBatt() {
 //returns temperature from DS18B20 in a float value. Returns 200F on error.
 float returnTemperatureF(DeviceAddress deviceAddress)
 {
+
+  //attempt to restart the temp sensor if there is a failure
+  if(DS18B20active == false)
+  {
+    startDS18B20();
+  }
   
   // method 2 - faster
   float tempC = sensors.getTempC(deviceAddress);
@@ -648,4 +650,31 @@ void printAddress(DeviceAddress deviceAddress)
     if (deviceAddress[i] < 16) Serial.print("0");
     SerialUSB.print(deviceAddress[i], HEX);
   }
+}
+
+//function to set up temperature sensor - note, is successful if 1 device is active on the bus
+void startDS18B20()
+{
+    
+  //start the temperature sensor
+  SerialUSB.println("Locating devices...");
+  sensors.begin();
+  SerialUSB.print("Found ");
+  SerialUSB.print(sensors.getDeviceCount(), DEC);
+  SerialUSB.println(" devices.");
+  if (!sensors.getAddress(insideThermometer, 0))
+  {
+    SerialUSB.println("Unable to find address for Device 0"); 
+    DS18B20active=false;
+  }
+  else
+  {
+    // show the addresses we found on the bus
+    SerialUSB.print("Device 0 Address: ");
+    printAddress(insideThermometer);
+    SerialUSB.println();
+    DS18B20active = true;
+  }
+  //set the resolution to 9 bit (Each Dallas/Maxim device is capable of several different resolutions)
+  sensors.setResolution(insideThermometer, 9);
 }
